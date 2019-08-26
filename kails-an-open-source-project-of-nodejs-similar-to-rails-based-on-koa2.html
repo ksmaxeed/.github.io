@@ -11,23 +11,32 @@
         font-family: Consolas; 
         padding: 4px;
     }
+    .contents {
+        max-width : 980px;
+        margin-left : auto;
+        margin-right : auto;
+        
+    }
     </style>
 </head>
 
 <body>
-    <blockquote class="tr_bq">
+    <div class='contents'>
+    <h1>[Kails] Koa2を使ったRails風のオープンソースフレームワーク</h1>
+        <blockquote class="tr_bq">
         オリジナル文書は Embbnuxさんのブログです。再掲載にあたっては元記事へ参照とリンクを保持してください。<br />
         This article was first published in Blog of Embbnux. For reprinting, please indicate the source of the original text and keep the link of the original text.<br />
         <a href="https://www.embbnux.com/2016/09/04/kails_with_koa2_like_ruby_on_rails" target="_blank">https://www.embbnux.com/2016/09/04/kails_with_koa2_like_ruby_on_rails</a>
-        </blockquote>
-        <blockquote class="tr_bq">
-        直接の翻訳元は<a href="https://developpaper.com/kails-an-open-source-project-of-nodejs-similar-to-rails-based-on-koa2/" target="_blank">https://developpaper.com/kails-an-open-source-project-of-nodejs-similar-to-rails-based-on-koa2/</a>&nbsp;です。
-        </blockquote>
-        <hr />
+        <br/>
+        <br/>
+        コピー元は<a href="https://simple-asta.blogspot.com/2019/08/kails-an-open-source-project-of-nodejs-similar-to-rails-based-on-koa2.html">kails-an-open-source-project-of-nodejs-similar-to-rails-based-on-koa2</a>です。
+    </blockquote>
+     <hr />
+     <br />
+     <div>
         私たちはkoa2フレームワークを調査し、ミドルウェアというアイデアがとても気に入りました。ミドルウェアで簡単にいろんなサービスを利用できるのは便利ですが、Webサイトを高速に開発できるようなフルスタックのフレームワークからは少し離れていることも分かりました。<br />
         そこで一般的なrailsフレームワークを参考に、koa2ベースのrails風のフレームワークとしてkailsを作りました。<br />
         postgresとredisを使用し、MVCフレームワークと、フロントエンドwebpack、およびisomorphic フロントエンド開発が含まれています。ここでは主に、kailsの構築におけるさまざまな技術スタックとアイデアを紹介します。<br />
-        <div>
         <br />
         koaは、元々expressを開発していたチームが開発しています。ミドルウェアのアイデアに基づいた新しいフレームワークの実装で、主にES6のジェネレーター機能を使用しています。ただ、koaはexpressとは異なり、Webサイト開発に対応するためのフレームワークを提供しようとはしていません。基本機能のモジュールや、Webサイトを作るための多くのモジュールを導入する必要があります。そのため、モジュールの選択によって様々なKoaプロジェクトがあります。kailsはRuby on Railsに似せたkoaプロジェクトで、その名前の由来もrailsにあります。
         <br />
@@ -563,7 +572,8 @@
         dockerfileでのデプロイメントの簡素化。<br />
         オンラインコードのプリコンパイル。<br />
         プルリクエストを歓迎します。<a href="https://github.com/embbnux/kails" target="_blank">https://github.com/embbnux/kails</a><br />
-        <br /></div>
-        
+        <br />
+    </div>
+    </div>
 </body>
 </html>
