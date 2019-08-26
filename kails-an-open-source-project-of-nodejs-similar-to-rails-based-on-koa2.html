@@ -1,0 +1,569 @@
+<html>
+<head>
+    <script src='https://cdn.rawgit.com/google/code-prettify/master/loader/run_prettify.js?skin=desert'/></script>
+
+    <style type="text/css">
+    pre.prettyprint {
+        word-wrap: normal;
+        white-space: pre;
+        overflow: scroll;
+        font-size: 12px;
+        font-family: Consolas; 
+        padding: 4px;
+    }
+    </style>
+</head>
+
+<body>
+    <blockquote class="tr_bq">
+        オリジナル文書は Embbnuxさんのブログです。再掲載にあたっては元記事へ参照とリンクを保持してください。<br />
+        This article was first published in Blog of Embbnux. For reprinting, please indicate the source of the original text and keep the link of the original text.<br />
+        <a href="https://www.embbnux.com/2016/09/04/kails_with_koa2_like_ruby_on_rails" target="_blank">https://www.embbnux.com/2016/09/04/kails_with_koa2_like_ruby_on_rails</a>
+        </blockquote>
+        <blockquote class="tr_bq">
+        直接の翻訳元は<a href="https://developpaper.com/kails-an-open-source-project-of-nodejs-similar-to-rails-based-on-koa2/" target="_blank">https://developpaper.com/kails-an-open-source-project-of-nodejs-similar-to-rails-based-on-koa2/</a>&nbsp;です。
+        </blockquote>
+        <hr />
+        私たちはkoa2フレームワークを調査し、ミドルウェアというアイデアがとても気に入りました。ミドルウェアで簡単にいろんなサービスを利用できるのは便利ですが、Webサイトを高速に開発できるようなフルスタックのフレームワークからは少し離れていることも分かりました。<br />
+        そこで一般的なrailsフレームワークを参考に、koa2ベースのrails風のフレームワークとしてkailsを作りました。<br />
+        postgresとredisを使用し、MVCフレームワークと、フロントエンドwebpack、およびisomorphic フロントエンド開発が含まれています。ここでは主に、kailsの構築におけるさまざまな技術スタックとアイデアを紹介します。<br />
+        <div>
+        <br />
+        koaは、元々expressを開発していたチームが開発しています。ミドルウェアのアイデアに基づいた新しいフレームワークの実装で、主にES6のジェネレーター機能を使用しています。ただ、koaはexpressとは異なり、Webサイト開発に対応するためのフレームワークを提供しようとはしていません。基本機能のモジュールや、Webサイトを作るための多くのモジュールを導入する必要があります。そのため、モジュールの選択によって様々なKoaプロジェクトがあります。kailsはRuby on Railsに似せたkoaプロジェクトで、その名前の由来もrailsにあります。
+        <br />
+        <br />
+        プロジェクトURL: <a href="https://github.com/embbnux/kails" target="_blank">https://github.com/embbnux/kails</a>&nbsp;(欢迎Pull Request)<br />
+        <br />
+        kailsのディレクトリ構成です。<br />
+        <pre class="prettyprint">├── app
+        │   ├── assets
+        │   │   ├── images
+        │   │   ├── javascripts
+        │   │   └── stylesheets
+        │   ├── controllers
+        │   ├── helpers
+        │   ├── models
+        │   ├── routes
+        │   ├── services
+        │   ├── views
+        │   └── index.js
+        ├── config
+        │   ├── config.js
+        │   └── webpack
+        │       ├── base.js
+        │       ├── development.js
+        │       └── production.js
+        ├── db
+        │   └── migrations
+        ├── index.js
+        ├── package.json
+        ├── public
+        └── test</pre>
+        <br />
+        <h2>
+        1. ES6サポート</h2>
+        kailsはコアフレームワークとしてkoa2を使います。そしてkoa2はES7のasync awaitを使います。<br />
+        そのままではnodeで実行できないので、babelなどのツールで変換する必要があります。<br />
+        <br />
+        .babelrc<br />
+        <pre class="prettyprint">{
+          "presets": [
+            "es2015",
+            "stage-0",
+            "react"
+          ]
+        }</pre>
+        プロジェクト全体でES6をサポートするためエントリーポイントでbabelを使うようにしています。<br />
+        <pre class="prettyprint">require('babel-core/register')
+        require('babel-polyfill')
+        require('./app/index.js')</pre>
+        <br />
+        <h2>
+        2. コアファイル app.js</h2>
+        app.jsがコアファイルです。koa2ミドルウェアの組み込みはここにあります。<br />
+        さまざまなミドルウェアがここでimportされて、その中の利用するfunctionを指定して読み込みます。<br />
+        以下はコンテンツの一部です。GitHubのソースコードをご覧ください。<br />
+        <pre class="prettyprint">import Koa from 'koa'
+        import session from 'koa-generic-session'
+        import csrf from 'koa-csrf'
+        import views from 'koa-views'
+        import convert from 'koa-convert'
+        import json from 'koa-json'
+        import bodyParser from 'koa-bodyparser'
+         
+        import config from '../config/config'
+        import router from './routes/index'
+        import koaRedis from 'koa-redis'
+        import models from './models/index'
+         
+        const redisStore = koaRedis({
+          url: config.redisUrl
+        })
+         
+        const app = new Koa()
+         
+        app.keys = [config.secretKeyBase]
+         
+        app.use(convert(session({
+          store: redisStore,
+          prefix: 'kails:sess:',
+          key: 'kails.sid'
+        })))
+         
+        app.use(bodyParser())
+        app.use(convert(json()))
+        app.use(convert(logger()))
+         
+        // not serve static when deploy
+        if(config.serveStatic){
+          app.use(convert(require('koa-static')(__dirname + '/public')))
+        }
+         
+        //views with pug
+        app.use(views('./views', { extension: 'pug' }))
+         
+        // csrf
+        app.use(convert(csrf()))
+         
+        app.use(router.routes(), router.allowedMethods())
+         
+        app.listen(config.port)
+        export default app</pre>
+        <br />
+        <h2>
+        3. MVCフレームワークの構築</h2>
+        ウェブサイトのアーキテクチャはMVCレイヤリングで実用的です。ウェブサイト開発のよくあるシナリオを満たすことができ、ロジックの複雑さはサービスレイヤーにまとめることができます。ルーティングは koa-router によって行われ、これらによってMVCレイヤーを実装しています。<br />
+        routes/index.jsは他のファイルをロードするために使われます。各ファイルは対応するルーティングヘッダーでルーティングを行います。<br />
+        <pre class="prettyprint">import fs from 'fs'
+        import path from 'path'
+        import Router from 'koa-router'
+         
+        const basename = path.basename(module.filename)
+        const router = Router()
+         
+        fs
+          .readdirSync(__dirname)
+          .filter(function(file) {
+            return (file.indexOf('.') !== 0) &amp;&amp; (file !== basename) &amp;&amp; (file.slice(-3) === '.js')
+          })
+          .forEach(function(file) {
+            let route = require(path.join(__dirname, file))
+            router.use(route.routes(), route.allowedMethods())
+          })
+         
+        export default router</pre>
+        <br />
+        ルーティングファイルはURLへのリクエストとコントローラーとの対応付けに使います。Restful APIに基づいています。<br />
+        <br />
+        routes/articles.js<br />
+        <pre class="prettyprint">import Router from 'koa-router'
+        import articles from '../controllers/articles'
+         
+        const router = Router({
+          prefix: '/articles'
+        })
+        router.get('/new', articles.checkLogin, articles.newArticle)
+        router.get('/:id', articles.show)
+        router.put('/:id', articles.checkLogin, articles.checkArticleOwner, articles.checkParamsBody, articles.update)
+        router.get('/:id/edit', articles.checkLogin, articles.checkArticleOwner, articles.edit)
+        router.post('/', articles.checkLogin, articles.checkParamsBody, articles.create)
+         
+        // for require auto in index.js
+        module.exports = router</pre>
+        <br />
+        モデルレイヤーではpostgresデータベースがsequelizeというORMで結びついています。データベースの移行作業はsequelize-cliで行います。<br />
+        <br />
+        user.js<br />
+        <pre class="prettyprint">import bcrypt from 'bcrypt'
+         
+        export default function(sequelize, DataTypes) {
+          const User = sequelize.define('User', {
+            id: {
+              type: DataTypes.INTEGER,
+              primaryKey: true,
+              autoIncrement: true
+            },
+            name: {
+              type: DataTypes.STRING,
+              validate: {
+                notEmpty: true,
+                len: [1, 50]
+              }
+            },
+            email: {
+              type: DataTypes.STRING,
+              validate: {
+                notEmpty: true,
+                isEmail: true
+              }
+            },
+            passwordDigest: {
+              type: DataTypes.STRING,
+              field: 'password_digest',
+              validate: {
+                notEmpty: true,
+                len: [8, 128]
+              }
+            },
+            password: {
+              type: DataTypes.VIRTUAL,
+              allowNull: false,
+              validate: {
+                notEmpty: true
+              }
+            },
+            passwordConfirmation: {
+              type: DataTypes.VIRTUAL
+            }
+          },{
+            underscored: true,
+            tableName: 'users',
+            indexes: [{ unique: true, fields: ['email'] }],
+            classMethods: {
+              associate: function(models) {
+                User.hasMany(models.Article, { foreignKey: 'user_id' })
+              }
+            },
+            instanceMethods: {
+              authenticate: function(value) {
+                if (bcrypt.compareSync(value, this.passwordDigest)){
+                  return this
+                }
+                else{
+                  return false
+                }
+              }
+            }
+          })
+          function hasSecurePassword(user, options, callback) {
+            if (user.password != user.passwordConfirmation) {
+              throw new Error('Password confirmation doesn\'t match Password')
+            }
+            bcrypt.hash(user.get('password'), 10, function(err, hash) {
+              if (err) return callback(err)
+              user.set('passwordDigest', hash)
+              return callback(null, options)
+            })
+          }
+          User.beforeCreate(function(user, options, callback) {
+            user.email = user.email.toLowerCase()
+            if (user.password){
+              hasSecurePassword(user, options, callback)
+            }
+            else{
+              return callback(null, options)
+            }
+          })
+          User.beforeUpdate(function(user, options, callback) {
+            user.email = user.email.toLowerCase()
+            if (user.password){
+              hasSecurePassword(user, options, callback)
+            }
+            else{
+              return callback(null, options)
+            }
+          })
+          return User
+        }</pre>
+        <br />
+        <h2>
+        4. 開発環境、テスト環境、本番環境</h2>
+        ウェブサイトは開発時、テスト時、本番運用時でそれぞれ違う環境なので、それぞれの環境設定が必要です。このソースでは開発、テスト、本番環境を分けており、これらを設定すると、NODE_ENV変数によって異なる構成が自動的にロードされます。<br />
+        <br />
+        config/config.js<br />
+        <pre class="prettyprint">var _ = require('lodash');
+        var development = require('./development');
+        var test = require('./test');
+        var production = require('./production');
+         
+        var env = process.env.NODE_ENV || 'development';
+        var configs = {
+          development: development,
+          test: test,
+          production: production
+        };
+        var defaultConfig = {
+          env: env
+        };
+         
+        var config = _.merge(defaultConfig, configs[env]);
+         
+        module.exports = config;</pre>
+        <br />
+        本番環境の設定ファイル<br />
+        <br />
+        config/production.js<br />
+        <pre class="prettyprint">const port = Number.parseInt(process.env.PORT, 10) || 5000
+        module.exports = {
+          port: port,
+          hostName: process.env.HOST_NAME_PRO,
+          serveStatic: process.env.SERVE_STATIC_PRO || false,
+          assetHost: process.env.ASSET_HOST_PRO,
+          redisUrl: process.env.REDIS_URL_PRO,
+          secretKeyBase: process.env.SECRET_KEY_BASE
+        };</pre>
+        <br />
+        <h2>
+        5. ミドルウェアを利用したコードの最適化</h2>
+        koaはミドルウェアの概念に基づいて構成されています。koaにとってはミドルウェアを使うことが自然なコードと言えます。いくつかのミドルウェアを紹介します。<br />
+        <br />
+        <h3>
+        CurrentUserインジェクション</h3>
+        CurrentUserは現在ログインしているユーザーを取得するために使用しました。これはWebサイトのユーザーシステムにおいて非常に重要です。<br />
+        <pre class="prettyprint">app.use(async (ctx, next) =&gt; {
+          let currentUser = null
+          if(ctx.session.userId){
+            currentUser = await models.User.findById(ctx.session.userId)
+          }
+          ctx.state = {
+            currentUser: currentUser,
+            isUserSignIn: (currentUser != null)
+          }
+          await next()
+        })</pre>
+        <br />
+        これによって他のミドルウェアでもログインユーザーを <i>ctx.state.currentUser</i> で取得できます。<br />
+        <br />
+        <h3>
+        コントローラーの最適化</h3>
+        例えばブログ記事用のコントローラーで編集、更新を行うには指定した記事のデータを取得する必要があり、権限の検証も必要です。コードの重複を避けるためにここでもミドルウェアを使って最適化できます。<br />
+        <br />
+        controllers/articles.js<br />
+        <pre class="prettyprint">async function edit(ctx, next) {
+          const locals = {
+            title: '编辑',
+            nav: 'article'
+          }
+          await ctx.render('articles/edit', locals)
+        }
+         
+        async function update(ctx, next) {
+          let article = ctx.state.article
+          article = await article.update(ctx.state.articleParams)
+          ctx.redirect('/articles/' + article.id)
+          return
+        }
+         
+        async function checkLogin(ctx, next) {
+          if(!ctx.state.isUserSignIn){
+            ctx.status = 302
+            ctx.redirect('/')
+            return
+          }
+          await next()
+        }
+         
+        async function checkArticleOwner(ctx, next) {
+          const currentUser = ctx.state.currentUser
+          const article = await models.Article.findOne({
+            where: {
+              id: ctx.params.id,
+              userId: currentUser.id
+            }
+          })
+          if(article == null){
+            ctx.redirect('/')
+            return
+          }
+          ctx.state.article = article
+          await next()
+        }</pre>
+        <br />
+        ルーティングでミドルウェアを適用するには以下のようにします。<br />
+        <pre class="prettyprint">router.put('/:id', articles.checkLogin, articles.checkArticleOwner, articles.update)
+        router.get('/:id/edit', articles.checkLogin, articles.checkArticleOwner, articles.edit)
+        </pre>
+        <br />
+        これはrailsのbefore_action関数を実装するのと同じです。<br />
+        <br />
+        <h2>
+        6. 静的ファイルのためのwebpackコンフィグ</h2>
+        フロントエンドとバックエンドを分離するにはフロントにもエンジニアリングが必要です。Webpackはフロントエンド用のプログラミングツールとして有名です。kailsではrailsのasset pipelineの機能として使います。その基本的なコンフィグです。<br />
+        <br />
+        config/webpack/base.js<br />
+        <pre class="prettyprint">var webpack = require('webpack');
+        var path = require('path');
+        var publicPath = path.resolve(__dirname, '../', '../', 'public', 'assets');
+        var ManifestPlugin = require('webpack-manifest-plugin');
+        var assetHost = require('../config').assetHost;
+        var ExtractTextPlugin = require('extract-text-webpack-plugin');
+         
+        module.exports = {
+          context: path.resolve(__dirname, '../', '../'),
+          entry: {
+            application: './assets/javascripts/application.js',
+            articles: './assets/javascripts/articles.js',
+            editor: './assets/javascripts/editor.js'
+          },
+          module: {
+            loaders: [{
+              test: /\.jsx?$/,
+              exclude: /node_modules/,
+              loader: ['babel-loader'],
+              query: {
+                presets: ['react', 'es2015']
+              }
+            },{
+              test: /\.coffee$/,
+              exclude: /node_modules/,
+              loader: 'coffee-loader'
+            },
+            {
+              test: /\.(woff|woff2|eot|ttf|otf)\??.*$/,
+              loader: 'url-loader?limit=8192&amp;name=[name].[ext]'
+            },
+            {
+              test: /\.(jpe?g|png|gif|svg)\??.*$/,
+              loader: 'url-loader?limit=8192&amp;name=[name].[ext]'
+            },
+            {
+              test: /\.css$/,
+              loader: ExtractTextPlugin.extract("style-loader", "css-loader")
+            },
+            {
+              test: /\.scss$/,
+              loader: ExtractTextPlugin.extract('style', 'css!sass')
+            }]
+          },
+          resolve: {
+            extensions: ['', '.js', '.jsx', '.coffee', '.json']
+          },
+          output: {
+            path: publicPath,
+            publicPath: assetHost + '/assets/',
+            filename: '[name]_bundle.js'
+          },
+          plugins: [
+            new webpack.ProvidePlugin({
+              $: 'jquery',
+              jQuery: 'jquery'
+            }),
+            // new webpack.HotModuleReplacementPlugin(),
+            new ManifestPlugin({
+              fileName: 'kails_manifest.json'
+            })
+          ]
+        };</pre>
+        <br />
+        <h2>
+        7. Reactでフロントエンドとバックエンドのisomorphism</h2>
+        nodeの利点はV8エンジンを使えることです。reactのDOMレンダリングもサーバーサイドでレンダリングできます。<br />
+        フロントエンドとバックエンドを同じにするとSEOにとって有益で、ユーザーがブラウザでアクセスした時の体験にも有益です。<br />
+        <br />
+        フロントエンドのReactの説明はしません。koaでそれを実現する方法は以下です。<br />
+        <pre class="prettyprint">import React from 'react'
+        import { renderToString } from 'react-dom/server'
+        async function index(ctx, next) {
+          const prerenderHtml = await renderToString(
+            <articles articles="">
+          )
+        }</articles></pre>
+        <br />
+        <h2>
+        8. テストとLint</h2>
+        テストとLintは開発プロセスにおいて重要です。kailsはテストにmochaを使い、Lintにはeslintを使います。<br />
+        <br />
+        .eslintrc<br />
+        <pre class="prettyprint">{
+          "parser": "babel-eslint",
+          "root": true,
+          "rules": {
+            "new-cap": 0,
+            "strict": 0,
+            "no-underscore-dangle": 0,
+            "no-use-before-define": 1,
+            "eol-last": 1,
+            "indent": [2, 2, { "SwitchCase": 0 }],
+            "quotes": [2, "single"],
+            "linebreak-style": [2, "unix"],
+            "semi": [1, "never"],
+            "no-console": 1,
+            "no-unused-vars": [1, {
+              "argsIgnorePattern": "_",
+              "varsIgnorePattern": "^debug$|^assert$|^withTransaction$"
+            }]
+          },
+          "env": {
+            "browser": true,
+            "es6": true,
+            "node": true,
+            "mocha": true
+          },
+          "extends": "eslint:recommended"
+        }</pre>
+        <br />
+        <h2>
+        9. コンソール</h2>
+        もしrailsを使用してるなら、railsコンソールというものがあり、Webサイトの環境にコマンドラインで入れることを知っておくべきです。とても便利です。<br />
+        kailsではこれをreplで実現しています。<br />
+        <pre class="prettyprint">if (process.argv[2] &amp;&amp; process.argv[2][0] == 'c') {
+          const repl = require('repl')
+          global.models = models
+          repl.start({
+            prompt: '&gt; ',
+            useGlobal: true
+          }).on('exit', () =&gt; { process.exit() })
+        }
+        else {
+          app.listen(config.port)
+        }</pre>
+        <br />
+        <h2>
+        10. PM2でのデプロイメント</h2>
+        開発の後はデプロイです。PM2を使用して以下のように本番環境にデプロイするのが自然です。<br />
+        <pre class="prettyprint">NODE_ENV=production ./node_modules/.bin/pm2 start index.js -i 2 --name "kails" --max-memory-restart 300M --merge-logs --log-date-format="YYYY-MM-DD HH:mm Z" --output="log/production.log"
+        </pre>
+        <br />
+        <h2>
+        11. NPMスクリプト</h2>
+        よく使うコマンドには多くのパラメータがあり、長くなるでしょう。NPMスクリプトを利用してこれらのエイリアスを作成できます。<br />
+        <pre class="prettyprint">{
+          "scripts": {
+            "console": "node index.js console",
+            "start": "./node_modules/.bin/nodemon index.js &amp; node_modules/.bin/webpack --config config/webpack.config.js --progress --colors --watch",
+            "app": "node index.js",
+            "pm2": "NODE_ENV=production ./node_modules/.bin/pm2 start index.js -i 2 --name \"kails\" --max-memory-restart 300M --merge-logs --log-date-format=\"YYYY-MM-DD HH:mm Z\" --output=\"log/production.log\"",
+            "pm2:restart": "NODE_ENV=production ./node_modules/.bin/pm2 restart \"kails\"",
+            "pm2:stop": "NODE_ENV=production ./node_modules/.bin/pm2 stop \"kails\"",
+            "pm2:monit": "NODE_ENV=production ./node_modules/.bin/pm2 monit \"kails\"",
+            "pm2:logs": "NODE_ENV=production ./node_modules/.bin/pm2 logs \"kails\"",
+            "test": "NODE_ENV=test ./node_modules/.bin/mocha --compilers js:babel-core/register --recursive --harmony --require babel-polyfill",
+            "assets_build": "node_modules/.bin/webpack --config config/webpack.config.js",
+            "assets_compile": "NODE_ENV=production node_modules/.bin/webpack --config config/webpack.config.js -p",
+            "webpack_dev": "node_modules/.bin/webpack --config config/webpack.config.js --progress --colors --watch",
+            "lint": "eslint . --ext .js",
+            "db:migrate": "node_modules/.bin/sequelize db:migrate",
+            "db:rollback": "node_modules/.bin/sequelize db:migrate:undo",
+            "create:migration": "node_modules/.bin/sequelize migration:create"
+          }
+        }</pre>
+        <br />
+        npmを使ったコマンドの紹介<br />
+        <pre class="prettyprint">npm install
+        npm run db:migrate
+        NODE_ENV=test npm run db:migrate
+        # run for development, it start app and webpack dev server
+        npm run start
+        # run the app
+        npm run app
+        # run the lint
+        npm run lint
+        # run test
+        npm run test
+        # deploy
+        npm run assets_compile
+        NODE_ENV=production npm run db:migrate
+        npm run pm2</pre>
+        <br />
+        <h2>
+        12. その他</h2>
+        現在、kailsは権限のチェック、マークダウンでの編集など、基本的なブログとして機能します。<br />
+        次のステップが考えられます。<br />
+        応答速度のパフォーマンス最適化。<br />
+        dockerfileでのデプロイメントの簡素化。<br />
+        オンラインコードのプリコンパイル。<br />
+        プルリクエストを歓迎します。<a href="https://github.com/embbnux/kails" target="_blank">https://github.com/embbnux/kails</a><br />
+        <br /></div>
+        
+</body>
+</html>
